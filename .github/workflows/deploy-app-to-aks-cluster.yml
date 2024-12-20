@@ -1,0 +1,116 @@
+name: Build and Deploy to AKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      projectName:
+        description: 'The name of your Project. Terraform projects let you manage resources and permissions.'  
+        required: true
+      resourceGroupName:
+        description: 'The name of your Azure Resource Group'  
+        required: true
+      clusterName:
+        description: 'The name of your AKS cluster'
+        required: true
+      registryName:
+        description: 'The name of your Azure Container Registry'
+        required: true  
+      acrName:
+        description: 'The acrName of your Azure Container Registry'
+        required: true
+      action:
+        description: 'Action to perform (apply/delete)'
+        required: true      
+  push:
+    branches:
+      - master
+
+env:
+  APP_NAME: ${{ github.event.inputs.projectName }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      - name: Authenticate AKS with ACR
+        run: az aks update -n ${{ github.event.inputs.clusterName }} -g ${{ github.event.inputs.resourceGroupName }} --attach-acr ${{ github.event.inputs.acrName }}  
+     
+      - name: Build and Push Docker Image
+        env:
+          REGISTRY: ${{ github.event.inputs.registryName }}
+        run: |
+          docker build -t $REGISTRY/$APP_NAME:${{ github.sha }} .
+          echo ${{ secrets.REGISTRY_PASSWORD }} | docker login $REGISTRY -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin
+          docker push $REGISTRY/$APP_NAME:${{ github.sha }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ github.event.inputs.clusterName }}
+          resource-group: ${{ github.event.inputs.resourceGroupName }}
+
+      - name: Update Kubernetes Manifests
+        run: |
+          sed -i 's|IMAGE_PLACEHOLDER|${{ github.event.inputs.registryName }}/${{ github.event.inputs.projectName }}:${{ github.sha }}|g' k8s/deployment.yaml
+          sed -i 's|APPNAME_PLACEHOLDER|${{ github.event.inputs.projectName }}|g' k8s/deployment.yaml
+
+      - name: Deploy to AKS
+        run: |
+          kubectl apply -f k8s/
+          
+      - name: Please wait creating external IP
+        run:  sleep 60
+        
+      - name: Get External IP
+        run: |
+          kubectl get services ${{ github.event.inputs.projectName }} 
+    
+
+  delete-pods:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'delete' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ github.event.inputs.clusterName }}
+          resource-group: ${{ github.event.inputs.resourceGroupName }}
+
+      - name: Update Kubernetes Manifests
+        run: |
+          sed -i 's|IMAGE_PLACEHOLDER|${{ github.event.inputs.registryName }}/${{ github.event.inputs.projectName }}:${{ github.sha }}|g' k8s/deployment.yaml
+          sed -i 's|APPNAME_PLACEHOLDER|${{ github.event.inputs.projectName }}|g' k8s/deployment.yaml
+
+      - name: Delete to AKS
+        run: |
+          kubectl delete -f k8s/

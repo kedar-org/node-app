@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: App-Terraform-NodeJS-AKS-Catalog
+  annotations:
+    github.com/project-slug: kedar-org/node-app
+    terraform/workspaces: NodeJSAks
+    terraform/organization: kedar-org
+  description: Azure Kubernetes Service(AKS) cluster managed by Terraform
+  tags:
+    - azure
+    - aks
+    - terraform
+spec:
+  type: service
+  lifecycle: experimental
+  owner: kedar.bhandare

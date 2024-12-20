@@ -1,0 +1,16 @@
+{
+    "name": "testnodejs",
+    "version": "1.0.0",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "build": "echo 'Build step can be added here if needed.'"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "express": "^4.21.2"
+    },
+    "keywords": [],
+    "description": ""
+}
